@@ -1,0 +1,11 @@
+# Ignore all .zip files
+*.zip
+
+# Ignore all .pt files
+*.pt
+
+# Ignore directories
+data_colorization/
+FULL_VERTICAL_PINEAPPLE/
+wandb/
+__pycache__/
