@@ -46,7 +46,7 @@ class PineappleDataset(Dataset):
 # Define a BCE Loss with 'sum' as per the image snippet
 loss_fn = nn.BCELoss(reduction='sum')
 
-def vae_loss(reconstructed, original, mean, logvar):
+def vae_loss(reconstructed, original, mean, logvar, loss="bce"):
     """
     Summation-based BCE + KL divergence, matching the style from your image.
 
@@ -54,17 +54,27 @@ def vae_loss(reconstructed, original, mean, logvar):
     original: [batch_size, channels, height, width]
     mean, logvar: [batch_size, latent_dim]
     """
-    # Flatten for BCE
+
     b_size = reconstructed.size(0)
-    reconstructed = reconstructed.view(b_size, -1)  # [B, D]
-    original = original.view(b_size, -1)            # [B, D]
 
-    # If your model outputs raw logits, you should use BCEWithLogitsLoss instead
-    # or apply a final sigmoid here:
-    reconstructed = torch.sigmoid(reconstructed)
+    if loss == "bce":
+        loss_fn = nn.BCELoss(reduction='sum')
+        # Flatten for BCE
+        
+        reconstructed = reconstructed.view(b_size, -1)  # [B, D]
+        original = original.view(b_size, -1)            # [B, D]
 
-    # 1) Reconstruction loss
-    reconstruction_loss = loss_fn(reconstructed, original)
+        # If your model outputs raw logits, you should use BCEWithLogitsLoss instead
+        # or apply a final sigmoid here:
+        reconstructed = torch.sigmoid(reconstructed)
+
+        # 1) Reconstruction loss
+        reconstruction_loss = loss_fn(reconstructed, original)
+    else:
+        loss_fn = nn.MSELoss(reduction='sum')
+        
+        # 1) Reconstruction loss
+        reconstruction_loss = loss_fn(reconstructed, original)
 
     # 2) KL divergence term:
     #    The expression below is the sum over the batch of (1 + log(sigma^2) - mu^2 - sigma^2).
@@ -73,7 +83,11 @@ def vae_loss(reconstructed, original, mean, logvar):
 
     # Negative ELBO = reconstruction_loss + 0.5 * KL_DIV
     # (the snippet from your image does exactly that).
-    loss = reconstruction_loss + KL_DIV
+    # loss = reconstruction_loss + KL_DIV
+
+    #loss = reconstruction_loss + KL_DIV #0.1 * KL_DIV
+    # Less influence for KL at latent space between normal distribution and data distribution
+    loss = reconstruction_loss + 0.1 * KL_DIV
 
     # Often we divide by batch size to get a mean loss per sample
     return loss / b_size
@@ -81,7 +95,7 @@ def vae_loss(reconstructed, original, mean, logvar):
 def main():
     batch_size = 4
     lr = 0.0001
-    epochs = 5
+    epochs = 50
     checkpoints_location = "./checkpoints/"
     # Create the checkpoints directory if it doesn't exist
     os.makedirs(checkpoints_location, exist_ok=True)
