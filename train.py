@@ -25,7 +25,7 @@ def parse_args():
 
 def setup_wandb(args, kl_beta=0.1):
     """Login to Weights & Biases and initialize a new run."""
-    api_key = "0200cb5286fa9cfa203979ab3fdafc7ebee1fc8f" #os.getenv("WANDB_API_KEY")
+    api_key = os.getenv("WANDB_API_KEY")
     wandb.login(key=api_key)
     run = wandb.init(
         entity="dnnxl",
