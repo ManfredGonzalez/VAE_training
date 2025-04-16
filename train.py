@@ -64,6 +64,9 @@ def train_vae(args, kl_beta=0.1):
     patience_counter = 0
 
     for epoch in range(args.epochs):
+
+        model_vae.train()
+
         running_loss = 0.0
         running_reconstruction_loss = 0.0
         running_kl_loss = 0.0
