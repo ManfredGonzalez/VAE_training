@@ -14,11 +14,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train VAE on Pineapple Dataset")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
-    parser.add_argument("--patience", type=int, default=5, help="Early stopping patience")
-    parser.add_argument("--checkpoints", type=str, default="./checkpoints/", help="Checkpoint save path")
-    parser.add_argument("--train_ratio", type=float, default=0.1, help="Checkpoint save path")
-    #parser.add_argument("--beta_kl_loss", type=float, default=0.1, help="Checkpoint save path") # Using optuna
+    parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
+    parser.add_argument("--patience", type=int, default=15, help="Early stopping patience")
+    parser.add_argument("--checkpoints", type=str, default="/data/dxie/vae/checkpoints/vae_pixel/", help="Checkpoint save path")
+    parser.add_argument("--train_ratio", type=float, default=0.8, help="Checkpoint save path")
+    parser.add_argument("--beta_kl_loss", type=float, default=0.1, help="Checkpoint save path") # Using optuna
     parser.add_argument("--device", type=str, default="cuda", help="Checkpoint save path")
 
     return parser.parse_args()
@@ -37,7 +37,8 @@ def setup_wandb(args, kl_beta=0.1):
             "epochs": args.epochs,
             "batch_size": args.batch_size,
             "optimizer": "Adam",
-            "beta_kl_loss": kl_beta
+            "beta_kl_loss": kl_beta,
+            "reconstruction_loss": "pixel space mse"
         },
     )
     return run
@@ -48,7 +49,7 @@ def train_vae(args, kl_beta=0.1):
     # Ensure checkpoint directory exists
     os.makedirs(args.checkpoints, exist_ok=True)
 
-    setup_wandb(args)
+    setup_wandb(args, kl_beta=kl_beta)
 
     # Load data
     trainset = PineappleDataset(train=True, train_ratio=args.train_ratio)
@@ -135,12 +136,10 @@ def train_vae(args, kl_beta=0.1):
             print("Early stopping triggered.")
             break
     wandb.finish()
+    return model_vae
 
-def test_vae(args, last_checkpoint="./checkpoints/weights_ck_1.pt"):
-    model_vae = VAE()
-    checkpoint_path = last_checkpoint  # Replace with your checkpoint file
-    checkpoint = torch.load(checkpoint_path)
-    model_vae.load_state_dict(checkpoint)
+
+def test_vae(args, model_vae):
     model_vae.eval()
     testset = PineappleDataset(train=False, train_ratio=args.train_ratio)
     testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=2)
@@ -170,18 +169,18 @@ def objective(trial:Trial):
     """
     global args
     # Suggested hyperparameters
-    kl_beta = trial.suggest_float("kl_beta", 0.1, 1.0, step=0.1)
-    train_vae(args, kl_beta=kl_beta)
-    avg_val_loss = test_vae(args, last_checkpoint="./checkpoints/weights_ck_1.pt")
+    kl_beta = trial.suggest_float("kl_beta", 0.1, 1.0, step=0.05)
+    model_vae = train_vae(args, kl_beta=kl_beta)
+    avg_val_loss = test_vae(args, model_vae)
     return avg_val_loss
 
 
 def create_study():
     
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=1)
+    study.optimize(objective, n_trials=30)
     df = study.trials_dataframe()
-    df.to_csv("optuna_trials.csv", index=False)
+    df.to_csv("optuna_trials_pixel_loss.csv", index=False)
 
     print("✅ Best trial:")
     print(study.best_trial)
