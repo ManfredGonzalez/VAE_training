@@ -28,8 +28,8 @@ def setup_wandb(args, kl_beta=0.1):
     api_key = os.getenv("WANDB_API_KEY")
     wandb.login(key=api_key)
     run = wandb.init(
-        entity="dnnxl",
-        project="VAE_Testing",
+        entity="imagine-laboratory-conare",
+        project="vae_training",
         config={
             "learning_rate": args.lr,
             "architecture": "MLP",
