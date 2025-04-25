@@ -1,55 +1,22 @@
 import os
-import argparse
 import torch
 import wandb
-from torch.utils.data import DataLoader
 import torch.optim as optim
+
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-from dataset import PineappleDataset  # Replace with your actual import
-from VAE import VAE, vae_loss  # Replace with your actual import
-import optuna
-from optuna import Trial
+from dataset import PineappleDataset 
+from VAE import VAE, vae_loss
+from utils import setup_wandb, parse_args, create_directory
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Train VAE on Pineapple Dataset")
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
-    parser.add_argument("--patience", type=int, default=15, help="Early stopping patience")
-    parser.add_argument("--checkpoints", type=str, default="/data/dxie/vae/checkpoints/vae_pixel/", help="Checkpoint save path")
-    parser.add_argument("--train_ratio", type=float, default=0.8, help="Checkpoint save path")
-    parser.add_argument("--beta_kl_loss", type=float, default=0.1, help="Checkpoint save path") # Using optuna
-    parser.add_argument("--device", type=str, default="cuda", help="Checkpoint save path")
+def train_vae(args):
 
-    return parser.parse_args()
+    # Create the folder for checkpoints
+    path_to_save_checkpoints = os.path.join(args.checkpoints, f"betaKL@{args.beta_kl_loss}")
+    create_directory(path_to_save_checkpoints)
 
-def setup_wandb(args, kl_beta=0.1):
-    """Login to Weights & Biases and initialize a new run."""
-    api_key = os.getenv("WANDB_API_KEY")
-    wandb.login(key=api_key)
-    run = wandb.init(
-        entity="imagine-laboratory-conare",
-        project="vae_training",
-        config={
-            "learning_rate": args.lr,
-            "architecture": "MLP",
-            "dataset": "Pineapples",
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "optimizer": "Adam",
-            "beta_kl_loss": kl_beta,
-            "reconstruction_loss": "pixel space mse"
-        },
-    )
-    return run
-
-
-def train_vae(args, kl_beta=0.1):
-
-    # Ensure checkpoint directory exists
-    os.makedirs(args.checkpoints, exist_ok=True)
-
-    setup_wandb(args, kl_beta=kl_beta)
+    # Set up the wandb 
+    setup_wandb(args)
 
     # Load data
     trainset = PineappleDataset(train=True, train_ratio=args.train_ratio)
@@ -80,12 +47,11 @@ def train_vae(args, kl_beta=0.1):
                 optimizer.zero_grad()
 
                 reconstruction, mean, logvar = model_vae(color_images)
-                loss, reconstruction_loss, kl_loss = vae_loss(reconstruction, color_images, mean, logvar, kl_beta=kl_beta)
+                loss, reconstruction_loss, kl_loss = vae_loss(reconstruction, color_images, mean, logvar, kl_beta=args.beta_kl_loss)
 
                 loss.backward()
                 optimizer.step()
 
-                #wandb.log({"step_loss": loss.item()}, step=global_step)
                 global_step += 1
 
                 prog_bar.set_postfix(loss=loss.item())
@@ -104,21 +70,31 @@ def train_vae(args, kl_beta=0.1):
         # --- Validation loop ---
         model_vae.eval()
         val_loss = 0.0
+        run_val_recon_loss = 0.0
+        run_val_kl_loss = 0.0
+
         val_batches = 0
         with torch.no_grad():
             for i, data in enumerate(testloader):
                 val_images = data["image"].to(args.device)
 
                 recon_images, mean, logvar = model_vae(val_images)
-                loss, _, _ = vae_loss(recon_images, val_images, mean, logvar)
+                loss, val_recon_loss, val_kl_loss = vae_loss(recon_images, val_images, mean, logvar)
 
+                run_val_recon_loss += val_recon_loss.item()
+                run_val_kl_loss += val_kl_loss.item()
                 val_loss += loss.item()
+
                 val_batches += 1
 
         avg_val_loss = val_loss / val_batches if val_batches else float('inf')
+        avg_val_recon_loss = run_val_recon_loss / val_batches if val_batches else float('inf')
+        avg_val_kl_loss = run_val_kl_loss / val_batches if val_batches else float('inf')
 
-        print(f"Epoch {epoch}: Train Average loss={avg_loss:.4f}, Average Reconstruction={avg_recon_loss:.4f}, Average KL={avg_kl_loss:.4f}, Val Average loss={avg_val_loss:.4f},")
-        wandb.log({"epoch_train_loss": avg_loss, "epoch_val_loss": avg_val_loss, "train_reconstruction_loss": avg_recon_loss, "train_kl_loss": avg_kl_loss}, step=epoch)
+        print(f"Epoch {epoch}: Train Avg loss={avg_loss:.4f}, Avg Reconstruction={avg_recon_loss:.4f}, Avg KL={avg_kl_loss:.4f}, Val Average loss={avg_val_loss:.4f},")
+        wandb.log({
+            "epoch_train_loss": avg_loss, "train_recon_loss": avg_recon_loss, "train_kl_loss": avg_kl_loss,
+            "epoch_val_loss": avg_val_loss, "val_recon_loss": avg_val_recon_loss, "val_kl_loss": avg_val_kl_loss}, step=epoch)
 
         # Checkpointing
         if avg_loss < best_loss:
@@ -138,62 +114,6 @@ def train_vae(args, kl_beta=0.1):
     wandb.finish()
     return model_vae
 
-
-def test_vae(args, model_vae):
-    model_vae.eval()
-    testset = PineappleDataset(train=False, train_ratio=args.train_ratio)
-    testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=2)
-    
-    model_vae.eval()
-    model_vae.to(args.device)
-    val_loss = 0.0
-    val_batches = 0
-    with torch.no_grad():
-        for i, data in enumerate(testloader):
-            val_images = data["image"].to(args.device)
-
-            recon_images, mean, logvar = model_vae(val_images)
-            loss, _, _ = vae_loss(recon_images, val_images, mean, logvar)
-
-            val_loss += loss.item()
-            val_batches += 1
-
-    avg_val_loss = val_loss / val_batches if val_batches else float('inf')
-    return avg_val_loss
-
-
-
-def objective(trial:Trial):
-    """
-    Objective function for Optuna to optimize SSIM by tuning loss weights.
-    """
-    global args
-    # Suggested hyperparameters
-    kl_beta = trial.suggest_float("kl_beta", 0.1, 1.0, step=0.05)
-    model_vae = train_vae(args, kl_beta=kl_beta)
-    avg_val_loss = test_vae(args, model_vae)
-    return avg_val_loss
-
-
-def create_study():
-    
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=30)
-    df = study.trials_dataframe()
-    df.to_csv("optuna_trials_pixel_loss.csv", index=False)
-
-    print("✅ Best trial:")
-    print(study.best_trial)
-
-def main():
-    train_vae(args)
-
 if __name__ == '__main__':
-    global args
-    # Check if CUDA (GPU) is available, otherwise use CPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Using device:", device)
-    
     args = parse_args()
-    #main()
-    create_study()
+
