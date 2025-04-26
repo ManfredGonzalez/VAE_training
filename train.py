@@ -19,8 +19,8 @@ def train_vae(args):
     setup_wandb(args)
 
     # Load data
-    trainset = PineappleDataset(train=True, train_ratio=args.train_ratio)
-    testset = PineappleDataset(train=False, train_ratio=args.train_ratio)
+    trainset = PineappleDataset(train=True, train_ratio=args.train_ratio, path=args.dataset)
+    testset = PineappleDataset(train=False, train_ratio=args.train_ratio, path=args.dataset)
     trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=2)
     testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
@@ -101,7 +101,7 @@ def train_vae(args):
             best_loss = avg_loss
             patience_counter = 0
             checkpoint_name = f"weights_ck_{epoch}.pt"
-            torch.save(model_vae.state_dict(), os.path.join(args.checkpoints, checkpoint_name))
+            torch.save(model_vae.state_dict(), os.path.join(path_to_save_checkpoints, checkpoint_name))
             print(f"Checkpoint saved: {checkpoint_name}")
         else:
             patience_counter += 1
@@ -116,4 +116,4 @@ def train_vae(args):
 
 if __name__ == '__main__':
     args = parse_args()
-
+    train_vae(args)

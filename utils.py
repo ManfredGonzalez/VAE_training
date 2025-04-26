@@ -6,14 +6,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train VAE on Pineapple Dataset")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--patience", type=int, default=15, help="Early stopping patience")
     parser.add_argument("--checkpoints", type=str, default="./checkpoints/vae/", help="Checkpoint save path")
     parser.add_argument("--train_ratio", type=float, default=0.8, help="Train ratio")
     parser.add_argument("--beta_kl_loss", type=float, default=0.1, help="Beta KL Loss") # Using optuna
     parser.add_argument("--device", type=str, default="cuda", help="Device")
     parser.add_argument("--architecture", type=str, default="cuda", help="Model architecture")
-
+    parser.add_argument("--dataset", type=str, default="./FULL_VERTICAL_PINEAPPLE/FULL_UNIFIED", help="Dataset path")
     parser.add_argument("--wandb_project", type=str, default="vae_training_exp1", help="Wandb Project Name")
     parser.add_argument("--wandb_entity", type=str, default="imagine-laboratory-conare", help="Wandb Project Entity")
 
