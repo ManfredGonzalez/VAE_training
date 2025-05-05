@@ -47,7 +47,7 @@ def vae_loss(reconstructed, original, mean, logvar, kl_beta=0.1):
     loss = reconstruction_loss + kl_beta * KL_DIV
 
     # Often we divide by batch size to get a mean loss per sample
-    return loss / b_size, reconstruction_loss, KL_DIV
+    return loss / b_size, reconstruction_loss / b_size, KL_DIV / b_size
 
 class VAE(nn.Module):
     def __init__(self):
